@@ -1,0 +1,10 @@
+{
+  "name": "usdctofiat",
+  "description": "USDC on/off-ramp guides, rate strategy, and earnings calculators for USDCtoFiat",
+  "version": "1.0.0",
+  "author": {
+    "name": "Galleon Labs",
+    "email": "gm@galleonlabs.io"
+  },
+  "homepage": "https://usdctofiat.xyz"
+}

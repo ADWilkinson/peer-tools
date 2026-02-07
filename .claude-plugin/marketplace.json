@@ -1,0 +1,40 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "peer-tools",
+  "owner": {
+    "name": "Galleon Labs",
+    "email": "gm@galleonlabs.io"
+  },
+  "metadata": {
+    "description": "Claude Code plugins for the ZKP2P P2P trading ecosystem — protocol analytics, market intelligence, and trading guides",
+    "version": "1.0.0"
+  },
+  "plugins": [
+    {
+      "name": "peerlytics",
+      "source": "./peerlytics",
+      "description": "ZKP2P protocol analytics, market intelligence, and explorer data via the Peerlytics Paid API. Requires API key.",
+      "version": "1.0.0",
+      "author": {
+        "name": "Galleon Labs",
+        "email": "gm@galleonlabs.io"
+      },
+      "homepage": "https://peerlytics.xyz",
+      "category": "development",
+      "tags": ["zkp2p", "defi", "analytics", "p2p", "usdc"]
+    },
+    {
+      "name": "usdctofiat",
+      "source": "./usdctofiat",
+      "description": "USDC on/off-ramp guides, rate strategy advisors, and earnings calculators. Free — no API key required.",
+      "version": "1.0.0",
+      "author": {
+        "name": "Galleon Labs",
+        "email": "gm@galleonlabs.io"
+      },
+      "homepage": "https://usdctofiat.xyz",
+      "category": "productivity",
+      "tags": ["zkp2p", "usdc", "fiat", "p2p", "offramp", "onramp"]
+    }
+  ]
+}

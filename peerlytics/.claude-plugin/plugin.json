@@ -1,0 +1,10 @@
+{
+  "name": "peerlytics",
+  "description": "ZKP2P protocol analytics, market intelligence, and explorer data via the Peerlytics API",
+  "version": "1.0.0",
+  "author": {
+    "name": "Galleon Labs",
+    "email": "gm@galleonlabs.io"
+  },
+  "homepage": "https://peerlytics.xyz"
+}
