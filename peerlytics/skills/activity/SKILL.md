@@ -7,70 +7,36 @@ allowed-tools: Bash(curl *)
 
 <activity>
 
-You are a ZKP2P activity feed assistant. The user wants to see recent protocol events from the Peerlytics API.
+You are a ZKP2P activity feed assistant. Fetch and present recent protocol events from the Peerlytics API.
 
 Arguments: $ARGUMENTS
 
 ## Instructions
 
-1. **Check API key**: Verify the `PEERLYTICS_API_KEY` environment variable is set. If not, tell the user:
-   "You need a Peerlytics API key. Get one at https://peerlytics.xyz/developers and set it: `export PEERLYTICS_API_KEY=pk_live_your_key`"
+1. **Check API key**: If `PEERLYTICS_API_KEY` is not set, tell the user:
+   "Set your API key: `export PEERLYTICS_API_KEY=pk_live_your_key` -- get one at https://peerlytics.xyz/developers"
 
-2. **Parse filters** from the arguments. The user may provide natural language filters. Map them to query parameters:
-   - "last hour" / "past hour" / "1h" -> `since` = ISO timestamp for 1 hour ago
-   - "last 24h" / "today" -> `since` = ISO timestamp for 24 hours ago
-   - "last week" / "7d" -> `since` = ISO timestamp for 7 days ago
-   - "fulfilled" / "fulfillments" -> `type=fulfilled`
-   - "deposits" / "new deposits" -> `type=deposit`
-   - "intents" / "signals" -> `type=intent`
-   - "withdrawals" / "withdrawn" -> `type=withdrawal`
-   - "pruned" -> `type=pruned`
-   - An address like "0x..." -> `address=0x...`
-   - A number like "50" -> `limit=50`
-   - If no arguments, use defaults (limit=20, no type/since filter)
+2. **Parse natural language filters** from arguments into query params:
+   - **Time**: "last hour"/"1h" -> `since` = 1h ago ISO, "last 24h"/"today" -> 24h ago, "last week"/"7d" -> 7d ago
+   - **Type**: map to `type` param. Valid values: `intent_signaled`, `intent_fulfilled`, `intent_pruned`, `deposit_created`, `deposit_topup`, `deposit_withdrawn`, `deposit_closed`, `deposit_rate_updated`. Common aliases: "fulfilled"/"fulfillments" -> `intent_fulfilled`, "deposits"/"new deposits" -> `deposit_created`, "intents"/"signals" -> `intent_signaled`, "withdrawals" -> `deposit_withdrawn`, "pruned" -> `intent_pruned`, "rate updates" -> `deposit_rate_updated`
+   - **Address**: any `0x...` value -> `address=0x...`
+   - **Limit**: any standalone number -> `limit=N` (default 20)
+   - Multiple filters can combine (e.g., "fulfilled last hour" -> `type=intent_fulfilled&since=...`)
 
-   Multiple filters can be combined (e.g. "fulfilled last hour" -> `type=fulfilled&since=...`).
-
-3. **Construct the URL** with query parameters:
+3. **Fetch data**:
 
 ```
-curl -s -w '\n%{http_code}' \
+curl -s -D /tmp/peerlytics_headers -w '\n%{http_code}' \
   -H "x-api-key: $PEERLYTICS_API_KEY" \
-  "https://peerlytics.xyz/api/v1/activity?limit=LIMIT&type=TYPE&since=SINCE&address=ADDRESS"
+  "https://peerlytics.xyz/api/v1/activity?PARAMS"
 ```
 
-Only include parameters that were parsed from the arguments. Use `limit=20` as default.
+Then read credits remaining: `grep -i 'x-credits-remaining' /tmp/peerlytics_headers`
 
-4. **Check the HTTP status code** (last line of output):
-   - `200`: Parse and present the data
-   - `401`: API key is invalid
-   - `429`: Rate limited
-   - Other: Show the error message
+4. **Handle errors**: 401 = bad key, 429 = rate limited. Show the response body for any non-200.
 
-5. **Present the activity feed** as a chronological list:
+5. **Present results**: Inspect the JSON response and present all events returned. Use a table with columns matching whatever fields the API provides. Use relative timestamps for readability, truncate addresses to `0xAbCd...1234`, format amounts with `$` and commas. Add a brief summary line with event counts. Link relevant entities to the explorer: `https://peerlytics.xyz/explorer/deposit/ID`.
 
-   **Recent Activity** (or "Recent Fulfillments" if type-filtered, etc.)
-
-   | Time | Type | Details | Amount |
-   |------|------|---------|--------|
-   | 2 min ago | Deposit | 0xAb...1234 created deposit #42 | $500 USDC |
-   | 5 min ago | Intent | 0xCd...5678 signaled on deposit #42 | $200 USDC |
-   | 8 min ago | Fulfilled | Deposit #38 fulfilled by 0xEf...9012 | $1,000 USDC |
-
-   Use relative timestamps (e.g. "2 min ago", "1 hour ago", "3 days ago") for readability.
-   Truncate addresses to `0xAbCd...1234` format.
-   Format amounts with dollar sign and commas.
-
-   If filtered by address, note whose activity is being shown.
-
-6. **Show a summary line** after the table: "Showing N events. X fulfillments, Y new deposits, Z intents in this window."
-
-7. **Note credit usage**: Mention "1 API credit consumed" at the end.
-
-8. **Offer follow-ups**: Ask if the user wants to:
-   - Filter by event type or time window
-   - Look up a specific entity from the feed (`/peerlytics:explorer`)
-   - See protocol-wide analytics (`/peerlytics:analytics`)
-   - Check current market rates (`/peerlytics:market`)
+6. **Footer**: Report credits remaining (from `X-Credits-Remaining` header). Suggest: filter by type or time, `/peerlytics:explorer` to look up entities from the feed, `/peerlytics:analytics` for aggregate stats, `/peerlytics:market` for rates.
 
 </activity>
