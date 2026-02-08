@@ -18,6 +18,16 @@ All skills fetch live platform data, market rates, and FX references from the Pe
 
 ## Skills
 
+### `/usdctofiat:create-deposit [args]`
+
+Create USDC deposits via direct contract calls on Base (cast/viem). Includes full ABI, all payment method hashes, 33 currency hashes, and a ready-to-run cast (Foundry) script. **No SDK required.**
+
+> Requires `PRIVATE_KEY`. Optional: `ZKP2P_API_KEY` to register payee details for verified deposits.
+
+```
+/usdctofiat:create-deposit
+```
+
 ### `/usdctofiat:deposit-guide`
 
 How to create and manage USDC deposits. Fetches live platform/currency data and current market state.

@@ -277,7 +277,13 @@ Full ABI for all functions in `references/CONTRACTS.md`.
 
 ## Script
 
-A complete bash script is available at `scripts/create-deposit.sh` that automates the full flow using `cast`. Run it with:
+A complete bash script is available at `scripts/create-deposit.sh` that automates the full flow using `cast`.
+
+Prereqs:
+- `export PRIVATE_KEY=...`
+- Optional (recommended for verified deposits): `export ZKP2P_API_KEY=...`
+
+Run it with:
 
 ```bash
 ./scripts/create-deposit.sh --amount 100 --platform revolut --currency GBP --identifier myrevtag --rate 0.74

@@ -2,8 +2,42 @@
 set -euo pipefail
 
 # create-deposit.sh -- Create a USDC deposit on ZKP2P V3 via cast (Foundry)
-# Usage: ./create-deposit.sh --amount 100 --platform revolut --currency GBP --identifier myrevtag --rate 0.74
-# Optional: --delegate, --min-intent, --max-intent, --rpc-url
+
+usage() {
+  cat <<'EOF'
+create-deposit.sh -- Create a USDC deposit on ZKP2P V3 via cast (Foundry)
+
+Required flags:
+  --amount <USDC>            Deposit amount (e.g. 100 or 250.5)
+  --platform <platform>     venmo|cashapp|chime|revolut|wise|zelle-citi|zelle-chase|zelle-bofa|paypal|monzo|n26
+  --currency <CODE>         e.g. USD|EUR|GBP (case-insensitive)
+  --identifier <string>     Your platform identifier (username/email/tag/etc)
+  --rate <fiat_per_usdc>    e.g. 0.74 (GBP/USDC), 1.01 (USD/USDC)
+
+Environment:
+  PRIVATE_KEY               Required. Used to sign transactions.
+  ZKP2P_API_KEY             Optional. Enables payee registration for verified deposits.
+
+Optional flags:
+  --min-intent <USDC>       Default: 5
+  --max-intent <USDC>       Default: --amount
+  --delegate [bot|0x...]    Omit value or use "bot" to use the delegate bot; pass an address to use a custom delegate.
+  --payee-details <bytes32> Skip API registration and use a known hashedOnchainId (0x + 64 hex chars).
+  --rpc-url <url>           Default: https://mainnet.base.org
+  -h, --help                Show this help
+
+Examples:
+  PRIVATE_KEY=... ZKP2P_API_KEY=... ./create-deposit.sh \
+    --amount 100 --platform revolut --currency GBP --identifier myrevtag --rate 0.74
+
+  PRIVATE_KEY=... ./create-deposit.sh \
+    --amount 250 --platform venmo --currency USD --identifier myvenmo --rate 1.02 --delegate
+EOF
+}
+
+require_cmd() {
+  command -v "$1" >/dev/null 2>&1 || { echo "Error: missing '$1' in PATH"; exit 1; }
+}
 
 # --- Constants ---
 USDC="0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
@@ -73,30 +107,54 @@ declare -A CURRENCY_HASHES=(
 
 # --- Parse Args ---
 AMOUNT="" PLATFORM="" CURRENCY="" IDENTIFIER="" RATE=""
-DELEGATE="$ZERO_ADDR" MIN_INTENT="5" MAX_INTENT=""
+DELEGATE="$ZERO_ADDR" MIN_INTENT="5" MAX_INTENT="" PAYEE_DETAILS_INPUT=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --amount) AMOUNT="$2"; shift 2 ;;
-    --platform) PLATFORM="$2"; shift 2 ;;
-    --currency) CURRENCY="$2"; shift 2 ;;
-    --identifier) IDENTIFIER="$2"; shift 2 ;;
-    --rate) RATE="$2"; shift 2 ;;
-    --delegate) DELEGATE="$2"; shift 2 ;;
-    --min-intent) MIN_INTENT="$2"; shift 2 ;;
-    --max-intent) MAX_INTENT="$2"; shift 2 ;;
-    --rpc-url) RPC="$2"; shift 2 ;;
-    *) echo "Unknown arg: $1"; exit 1 ;;
+    -h|--help) usage; exit 0 ;;
+    --amount) [[ $# -ge 2 ]] || { echo "Error: --amount requires a value"; usage; exit 1; }; AMOUNT="$2"; shift 2 ;;
+    --platform) [[ $# -ge 2 ]] || { echo "Error: --platform requires a value"; usage; exit 1; }; PLATFORM="$2"; shift 2 ;;
+    --currency) [[ $# -ge 2 ]] || { echo "Error: --currency requires a value"; usage; exit 1; }; CURRENCY="$2"; shift 2 ;;
+    --identifier) [[ $# -ge 2 ]] || { echo "Error: --identifier requires a value"; usage; exit 1; }; IDENTIFIER="$2"; shift 2 ;;
+    --rate) [[ $# -ge 2 ]] || { echo "Error: --rate requires a value"; usage; exit 1; }; RATE="$2"; shift 2 ;;
+    --delegate)
+      # `--delegate` with no value means "use delegate bot"
+      if [[ $# -ge 2 && "$2" != --* ]]; then
+        case "$2" in
+          bot|delegate|delegate-bot) DELEGATE="$DELEGATE_BOT" ;;
+          0x*) DELEGATE="$2" ;;
+          *) echo "Error: invalid --delegate value '$2'"; usage; exit 1 ;;
+        esac
+        shift 2
+      else
+        DELEGATE="$DELEGATE_BOT"
+        shift 1
+      fi
+      ;;
+    --min-intent) [[ $# -ge 2 ]] || { echo "Error: --min-intent requires a value"; usage; exit 1; }; MIN_INTENT="$2"; shift 2 ;;
+    --max-intent) [[ $# -ge 2 ]] || { echo "Error: --max-intent requires a value"; usage; exit 1; }; MAX_INTENT="$2"; shift 2 ;;
+    --payee-details) [[ $# -ge 2 ]] || { echo "Error: --payee-details requires a value"; usage; exit 1; }; PAYEE_DETAILS_INPUT="$2"; shift 2 ;;
+    --rpc-url) [[ $# -ge 2 ]] || { echo "Error: --rpc-url requires a value"; usage; exit 1; }; RPC="$2"; shift 2 ;;
+    *) echo "Unknown arg: $1"; usage; exit 1 ;;
   esac
 done
 
 # --- Validate ---
+require_cmd cast
+require_cmd curl
+require_cmd jq
+require_cmd bc
+
 [[ -z "$AMOUNT" ]] && echo "Error: --amount required" && exit 1
 [[ -z "$PLATFORM" ]] && echo "Error: --platform required" && exit 1
 [[ -z "$CURRENCY" ]] && echo "Error: --currency required" && exit 1
 [[ -z "$IDENTIFIER" ]] && echo "Error: --identifier required" && exit 1
 [[ -z "$RATE" ]] && echo "Error: --rate required" && exit 1
 [[ -z "$PRIVATE_KEY" ]] && echo "Error: PRIVATE_KEY env var required" && exit 1
+
+# Normalize user input to match hash maps.
+PLATFORM="$(echo "$PLATFORM" | tr '[:upper:]' '[:lower:]')"
+CURRENCY="$(echo "$CURRENCY" | tr '[:lower:]' '[:upper:]')"
 
 METHOD_HASH="${METHOD_HASHES[$PLATFORM]:-}"
 [[ -z "$METHOD_HASH" ]] && echo "Error: unknown platform '$PLATFORM'" && exit 1
@@ -137,7 +195,14 @@ declare -A DEPOSIT_DATA_KEYS=(
 
 # --- Step 1: Register payee (if API key available) ---
 PAYEE_DETAILS="$ZERO_BYTES32"
-if [[ -n "${ZKP2P_API_KEY:-}" ]]; then
+if [[ -n "$PAYEE_DETAILS_INPUT" ]]; then
+  if [[ ! "$PAYEE_DETAILS_INPUT" =~ ^0x[0-9a-fA-F]{64}$ ]]; then
+    echo "Error: --payee-details must be bytes32 (0x + 64 hex chars)"
+    exit 1
+  fi
+  PAYEE_DETAILS="$PAYEE_DETAILS_INPUT"
+  echo "Step 1: Using provided payee details: $PAYEE_DETAILS"
+elif [[ -n "${ZKP2P_API_KEY:-}" ]]; then
   echo "Step 1: Registering payee details..."
   API_PROCESSOR="$PLATFORM"
   [[ "$PLATFORM" == zelle-* ]] && API_PROCESSOR="zelle"
@@ -151,7 +216,7 @@ if [[ -n "${ZKP2P_API_KEY:-}" ]]; then
     -H "X-API-Key: $ZKP2P_API_KEY" \
     -d "{\"processorName\":\"$API_PROCESSOR\",\"depositData\":{\"$DATA_KEY\":\"$IDENTIFIER\",\"telegramUsername\":\"\"}}")
 
-  PAYEE_DETAILS=$(echo "$RESPONSE" | jq -r '.responseObject.hashedOnchainId // empty')
+  PAYEE_DETAILS=$(echo "$RESPONSE" | jq -r '.responseObject.hashedOnchainId // empty' 2>/dev/null || true)
   if [[ -z "$PAYEE_DETAILS" ]]; then
     echo "Warning: Could not get hashedOnchainId. Response: $RESPONSE"
     echo "Proceeding with zero payee details (deposit will work but buyers can't verify payment)."
@@ -165,22 +230,27 @@ else
 fi
 echo ""
 
-# --- Step 2: Approve USDC (with ERC-8021 attribution) ---
-echo "Step 2: Approving USDC..."
-APPROVE_CALLDATA=$(cast calldata "approve(address,uint256)" "$ESCROW" "$AMOUNT_UNITS")
-APPROVE_TX=$(cast send "$USDC" \
-  --data "${APPROVE_CALLDATA}${ATTRIBUTION}" \
-  --rpc-url "$RPC" \
-  --private-key "$PRIVATE_KEY" \
-  --json | jq -r '.transactionHash')
-echo "Approval tx: $APPROVE_TX"
+# --- Step 2: Approve USDC (if needed) ---
+echo "Step 2: Checking allowance / approving USDC..."
+WALLET_ADDRESS="$(cast wallet address --private-key "$PRIVATE_KEY")"
+ALLOWANCE="$(cast call "$USDC" "allowance(address,address)(uint256)" "$WALLET_ADDRESS" "$ESCROW" --rpc-url "$RPC")"
+
+if [[ "$(echo "$ALLOWANCE < $AMOUNT_UNITS" | bc)" -eq 1 ]]; then
+  echo "Current allowance: $ALLOWANCE (needs >= $AMOUNT_UNITS) -> approving..."
+  APPROVE_TX=$(cast send "$USDC" \
+    "approve(address,uint256)" "$ESCROW" "$AMOUNT_UNITS" \
+    --rpc-url "$RPC" \
+    --private-key "$PRIVATE_KEY" \
+    --json | jq -r '.transactionHash // .transaction_hash // empty')
+  [[ -z "$APPROVE_TX" ]] && echo "Error: could not parse approval tx hash" && exit 1
+  echo "Approval tx: $APPROVE_TX"
+else
+  echo "Current allowance: $ALLOWANCE (>= $AMOUNT_UNITS) -> skipping approve"
+fi
 echo ""
 
 # --- Step 3: Create deposit (with ERC-8021 attribution) ---
 echo "Step 3: Creating deposit..."
-
-# Handle delegate: use delegate bot address if --delegate flag passed
-[[ "$DELEGATE" == "delegate" ]] && DELEGATE="$DELEGATE_BOT"
 
 # Encode calldata and append attribution suffix for referral tracking
 DEPOSIT_CALLDATA=$(cast calldata \
@@ -191,18 +261,23 @@ DEPOSIT_TX=$(cast send "$ESCROW" \
   --data "${DEPOSIT_CALLDATA}${ATTRIBUTION}" \
   --rpc-url "$RPC" \
   --private-key "$PRIVATE_KEY" \
-  --json | jq -r '.transactionHash')
+  --json | jq -r '.transactionHash // .transaction_hash // empty')
+[[ -z "$DEPOSIT_TX" ]] && echo "Error: could not parse deposit tx hash" && exit 1
 echo "Deposit tx: $DEPOSIT_TX"
 echo ""
 
 # --- Step 4: Parse deposit ID from receipt ---
 echo "Step 4: Parsing deposit ID..."
-sleep 2
-
 EVENT_SIG=$(cast sig-event "DepositReceived(uint256,address,address,uint256,(uint256,uint256),address,address)")
-DEPOSIT_ID=$(cast receipt "$DEPOSIT_TX" --rpc-url "$RPC" --json | \
-  jq -r ".logs[] | select(.topics[0] == \"$EVENT_SIG\") | .topics[1]" | \
-  cast to-dec 2>/dev/null || echo "")
+DEPOSIT_ID=""
+for _ in $(seq 1 30); do
+  RECEIPT_JSON="$(cast receipt "$DEPOSIT_TX" --rpc-url "$RPC" --json 2>/dev/null || true)"
+  if [[ -n "$RECEIPT_JSON" ]]; then
+    DEPOSIT_ID="$(echo "$RECEIPT_JSON" | jq -r ".logs[] | select(.topics[0] == \"$EVENT_SIG\") | .topics[1]" 2>/dev/null | cast to-dec 2>/dev/null || true)"
+    [[ -n "$DEPOSIT_ID" ]] && break
+  fi
+  sleep 2
+done
 
 if [[ -n "$DEPOSIT_ID" ]]; then
   echo "Deposit created successfully!"
