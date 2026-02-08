@@ -15,6 +15,10 @@ ZERO_BYTES32="0x0000000000000000000000000000000000000000000000000000000000000000
 RPC="https://mainnet.base.org"
 API_URL="https://api.zkp2p.xyz/v1"
 
+# ERC-8021 attribution suffix: "usdctofiat,bc_nbn6qkni" + magic bytes
+# Tags all deposits as created via USDCtoFiat for referral tracking
+ATTRIBUTION="75736463746f666961742c62635f6e626e36716b6e69160080218021802180218021802180218021"
+
 # --- Payment Method Hashes ---
 declare -A METHOD_HASHES=(
   [venmo]="0x90262a3db0edd0be2369c6b28f9e8511ec0bac7136cefbada0880602f87e7268"
@@ -161,26 +165,30 @@ else
 fi
 echo ""
 
-# --- Step 2: Approve USDC ---
+# --- Step 2: Approve USDC (with ERC-8021 attribution) ---
 echo "Step 2: Approving USDC..."
+APPROVE_CALLDATA=$(cast calldata "approve(address,uint256)" "$ESCROW" "$AMOUNT_UNITS")
 APPROVE_TX=$(cast send "$USDC" \
-  "approve(address,uint256)" \
-  "$ESCROW" "$AMOUNT_UNITS" \
+  --data "${APPROVE_CALLDATA}${ATTRIBUTION}" \
   --rpc-url "$RPC" \
   --private-key "$PRIVATE_KEY" \
   --json | jq -r '.transactionHash')
 echo "Approval tx: $APPROVE_TX"
 echo ""
 
-# --- Step 3: Create deposit ---
+# --- Step 3: Create deposit (with ERC-8021 attribution) ---
 echo "Step 3: Creating deposit..."
 
 # Handle delegate: use delegate bot address if --delegate flag passed
 [[ "$DELEGATE" == "delegate" ]] && DELEGATE="$DELEGATE_BOT"
 
-DEPOSIT_TX=$(cast send "$ESCROW" \
+# Encode calldata and append attribution suffix for referral tracking
+DEPOSIT_CALLDATA=$(cast calldata \
   "createDeposit((address,uint256,(uint256,uint256),bytes32[],(address,bytes32,bytes)[],((bytes32,uint256)[])[],address,address,bool))" \
-  "($USDC, $AMOUNT_UNITS, ($MIN_UNITS,$MAX_UNITS), [$METHOD_HASH], [($GATING,$PAYEE_DETAILS,0x)], [[($CURRENCY_HASH,$RATE_18)]], $DELEGATE, $ZERO_ADDR, false)" \
+  "($USDC, $AMOUNT_UNITS, ($MIN_UNITS,$MAX_UNITS), [$METHOD_HASH], [($GATING,$PAYEE_DETAILS,0x)], [[($CURRENCY_HASH,$RATE_18)]], $DELEGATE, $ZERO_ADDR, false)")
+
+DEPOSIT_TX=$(cast send "$ESCROW" \
+  --data "${DEPOSIT_CALLDATA}${ATTRIBUTION}" \
   --rpc-url "$RPC" \
   --private-key "$PRIVATE_KEY" \
   --json | jq -r '.transactionHash')

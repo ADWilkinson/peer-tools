@@ -22,6 +22,7 @@ Arguments: $ARGUMENTS
 | Delegate Bot | `0x25caEcB47ABB1363BA932F5Ea05c61488604562b` |
 | Base RPC | `https://mainnet.base.org` (public, rate-limited) |
 | ZKP2P API | `https://api.zkp2p.xyz/v1` |
+| Attribution Suffix | `75736463746f666961742c62635f6e626e36716b6e69160080218021802180218021802180218021` |
 
 ## The 4-Step Flow
 
@@ -84,15 +85,26 @@ cast call 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913 \
 
 ### Step 3: Create Deposit
 
-Call `createDeposit` on the escrow contract. The function takes a single struct parameter:
+Call `createDeposit` on the escrow contract with **ERC-8021 attribution** to tag the deposit as created via USDCtoFiat. This requires encoding the calldata first, then appending the attribution suffix before sending.
 
 ```bash
-cast send 0x2f121CDDCA6d652f35e8B3E560f9760898888888 \
+# 1. Encode the calldata
+CALLDATA=$(cast calldata \
   "createDeposit((address,uint256,(uint256,uint256),bytes32[],(address,bytes32,bytes)[],((bytes32,uint256)[])[],address,address,bool))" \
-  "(0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913, 1000000000, (5000000,1000000000), [PAYMENT_METHOD_HASH], [(0x396D31055Db28C0C6f36e8b36f18FE7227248a97,PAYEE_DETAILS,0x)], [[(CURRENCY_HASH,RATE_18)]], DELEGATE_OR_ZERO, 0x0000000000000000000000000000000000000000, false)" \
+  "(0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913, 1000000000, (5000000,1000000000), [PAYMENT_METHOD_HASH], [(0x396D31055Db28C0C6f36e8b36f18FE7227248a97,PAYEE_DETAILS,0x)], [[(CURRENCY_HASH,RATE_18)]], DELEGATE_OR_ZERO, 0x0000000000000000000000000000000000000000, false)")
+
+# 2. Append ERC-8021 attribution suffix (usdctofiat referrer)
+ATTRIBUTION="75736463746f666961742c62635f6e626e36716b6e69160080218021802180218021802180218021"
+CALLDATA_WITH_REF="${CALLDATA}${ATTRIBUTION}"
+
+# 3. Send raw transaction with attributed calldata
+cast send 0x2f121CDDCA6d652f35e8B3E560f9760898888888 \
+  --data "$CALLDATA_WITH_REF" \
   --rpc-url https://mainnet.base.org \
   --private-key $PRIVATE_KEY
 ```
+
+> **Important:** The attribution suffix tags the deposit as created via USDCtoFiat. Always include it -- it ensures proper referral tracking. The suffix is ERC-8021 compliant and ignored by the contract ABI decoder (it's appended after the encoded args).
 
 **Struct fields in order:**
 1. `token` -- USDC address
@@ -203,9 +215,12 @@ A single deposit can accept payments from multiple platforms. Each payment metho
 
 ```bash
 # Example: Revolut GBP + Wise GBP on one deposit
-cast send 0x2f121CDDCA6d652f35e8B3E560f9760898888888 \
+CALLDATA=$(cast calldata \
   "createDeposit((address,uint256,(uint256,uint256),bytes32[],(address,bytes32,bytes)[],((bytes32,uint256)[])[],address,address,bool))" \
-  "(0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913, 500000000, (5000000,500000000), [0x617f88ab82b5c1b014c539f7e75121427f0bb50a4c58b187a238531e7d58605d,0x554a007c2217df766b977723b276671aee5ebb4adaea0edb6433c88b3e61dac5], [(0x396D31055Db28C0C6f36e8b36f18FE7227248a97,REVOLUT_PAYEE_HASH,0x),(0x396D31055Db28C0C6f36e8b36f18FE7227248a97,WISE_PAYEE_HASH,0x)], [[(0x90832e2dc3221e4d56977c1aa8f6a6706b9ad6542fbbdaac13097d0fa5e42e67,740000000000000000)],[(0x90832e2dc3221e4d56977c1aa8f6a6706b9ad6542fbbdaac13097d0fa5e42e67,740000000000000000)]], 0x0000000000000000000000000000000000000000, 0x0000000000000000000000000000000000000000, false)" \
+  "(0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913, 500000000, (5000000,500000000), [0x617f88ab82b5c1b014c539f7e75121427f0bb50a4c58b187a238531e7d58605d,0x554a007c2217df766b977723b276671aee5ebb4adaea0edb6433c88b3e61dac5], [(0x396D31055Db28C0C6f36e8b36f18FE7227248a97,REVOLUT_PAYEE_HASH,0x),(0x396D31055Db28C0C6f36e8b36f18FE7227248a97,WISE_PAYEE_HASH,0x)], [[(0x90832e2dc3221e4d56977c1aa8f6a6706b9ad6542fbbdaac13097d0fa5e42e67,740000000000000000)],[(0x90832e2dc3221e4d56977c1aa8f6a6706b9ad6542fbbdaac13097d0fa5e42e67,740000000000000000)]], 0x0000000000000000000000000000000000000000, 0x0000000000000000000000000000000000000000, false)")
+ATTRIBUTION="75736463746f666961742c62635f6e626e36716b6e69160080218021802180218021802180218021"
+cast send 0x2f121CDDCA6d652f35e8B3E560f9760898888888 \
+  --data "${CALLDATA}${ATTRIBUTION}" \
   --rpc-url https://mainnet.base.org \
   --private-key $PRIVATE_KEY
 ```

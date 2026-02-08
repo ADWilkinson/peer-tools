@@ -258,3 +258,32 @@ cast receipt $TX_HASH --rpc-url https://mainnet.base.org --json | \
   "outputs": [{ "type": "uint256" }]
 }
 ```
+
+## ERC-8021 Attribution
+
+All transactions created via this skill should include the USDCtoFiat attribution suffix appended to the calldata. This enables referral tracking on-chain.
+
+**Suffix (hex, no 0x prefix):**
+```
+75736463746f666961742c62635f6e626e36716b6e69160080218021802180218021802180218021
+```
+
+**Format:** `[referrer codes as UTF-8, comma-separated][length byte][ERC-8021 magic bytes]`
+
+- Referrer codes: `usdctofiat,bc_nbn6qkni` (22 bytes UTF-8)
+- Length byte: `0x16` (22)
+- Magic: `0080218021802180218021802180218021` (ERC-8021 identifier)
+
+**Usage with cast:**
+```bash
+# 1. Encode calldata normally
+CALLDATA=$(cast calldata "functionName(types)" "args")
+
+# 2. Append suffix (string concatenation -- suffix has no 0x prefix)
+ATTRIBUTION="75736463746f666961742c62635f6e626e36716b6e69160080218021802180218021802180218021"
+
+# 3. Send with --data instead of function signature
+cast send $CONTRACT --data "${CALLDATA}${ATTRIBUTION}" --rpc-url $RPC --private-key $KEY
+```
+
+The suffix is ignored by the Solidity ABI decoder (appended after the encoded arguments) and is read by off-chain indexers for attribution.
