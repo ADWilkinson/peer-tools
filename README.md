@@ -41,6 +41,7 @@ Deposit guides, rate optimization, and earnings projections for [USDCtoFiat](htt
 
 | Skill | Description |
 |-------|-------------|
+| `/usdctofiat:create-deposit [args]` | Create USDC deposits via direct contract calls (cast/viem). No SDK required. |
 | `/usdctofiat:deposit-guide` | How to create and manage USDC deposits |
 | `/usdctofiat:rate-strategy [currency] [platform]` | P35 rate optimization with live market positioning |
 | `/usdctofiat:earnings-calc [amount] [rate] [currency]` | Monthly earnings projections, sensitivity analysis, depletion estimates |
