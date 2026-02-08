@@ -110,8 +110,9 @@ cast send 0x2f121CDDCA6d652f35e8B3E560f9760898888888 \
 Parse the `DepositReceived` event from the transaction receipt to get the deposit ID:
 
 ```bash
+EVENT_SIG=$(cast sig-event "DepositReceived(uint256,address,address,uint256,(uint256,uint256),address,address)")
 cast receipt $TX_HASH --rpc-url https://mainnet.base.org --json | \
-  jq '.logs[] | select(.topics[0] == "0x...") | .topics[1]' | \
+  jq -r ".logs[] | select(.topics[0] == \"$EVENT_SIG\") | .topics[1]" | \
   cast to-dec
 ```
 
@@ -175,7 +176,7 @@ Formula: `rate * 1e18`
 | zelle-bofa | `0x4bc4...7ab5` | Email | USD |
 | paypal | `0x3ccc...490f` | Email | USD, EUR, GBP, AUD, CAD, SGD, NZD |
 | monzo | `0x62c7...645c` | Monzo.me username | GBP |
-| n26 | `0xd9ff...6b` | IBAN | EUR |
+| n26 | `0xd9ff...dc6b` | IBAN | EUR |
 
 Full hashes and all currencies in `references/PLATFORMS.md`.
 

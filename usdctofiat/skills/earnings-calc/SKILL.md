@@ -114,6 +114,7 @@ Note "1 API credit consumed" at the end.
 ### 8. Follow-ups
 
 Suggest:
+- `/usdctofiat:create-deposit` -- Create a deposit via direct contract calls (for agents and devs)
 - `/usdctofiat:rate-strategy CURRENCY` -- Get optimal rate positioning
 - `/usdctofiat:deposit-guide` -- Guide to creating or adjusting a deposit
 

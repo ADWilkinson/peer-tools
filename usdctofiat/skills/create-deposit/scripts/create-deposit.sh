@@ -10,7 +10,8 @@ USDC="0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
 ESCROW="0x2f121CDDCA6d652f35e8B3E560f9760898888888"
 GATING="0x396D31055Db28C0C6f36e8b36f18FE7227248a97"
 DELEGATE_BOT="0x25caEcB47ABB1363BA932F5Ea05c61488604562b"
-ZERO="0x0000000000000000000000000000000000000000"
+ZERO_ADDR="0x0000000000000000000000000000000000000000"
+ZERO_BYTES32="0x0000000000000000000000000000000000000000000000000000000000000000"
 RPC="https://mainnet.base.org"
 API_URL="https://api.zkp2p.xyz/v1"
 
@@ -68,7 +69,7 @@ declare -A CURRENCY_HASHES=(
 
 # --- Parse Args ---
 AMOUNT="" PLATFORM="" CURRENCY="" IDENTIFIER="" RATE=""
-DELEGATE="$ZERO" MIN_INTENT="5" MAX_INTENT=""
+DELEGATE="$ZERO_ADDR" MIN_INTENT="5" MAX_INTENT=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -115,24 +116,42 @@ echo "Intent range: $MIN_INTENT - $MAX_INTENT USDC"
 echo "Delegate: $DELEGATE"
 echo ""
 
+# --- Platform-specific depositData field names ---
+declare -A DEPOSIT_DATA_KEYS=(
+  [venmo]="venmoUsername"
+  [cashapp]="cashtag"
+  [chime]="chimesign"
+  [revolut]="revolutUsername"
+  [wise]="wisetag"
+  [zelle-citi]="zelleEmail"
+  [zelle-chase]="zelleEmail"
+  [zelle-bofa]="zelleEmail"
+  [paypal]="paypalEmail"
+  [monzo]="monzoMeUsername"
+  [n26]="iban"
+)
+
 # --- Step 1: Register payee (if API key available) ---
-PAYEE_DETAILS="$ZERO"
+PAYEE_DETAILS="$ZERO_BYTES32"
 if [[ -n "${ZKP2P_API_KEY:-}" ]]; then
   echo "Step 1: Registering payee details..."
   API_PROCESSOR="$PLATFORM"
   [[ "$PLATFORM" == zelle-* ]] && API_PROCESSOR="zelle"
 
+  DATA_KEY="${DEPOSIT_DATA_KEYS[$PLATFORM]:-}"
+  [[ -z "$DATA_KEY" ]] && echo "Error: no depositData key for '$PLATFORM'" && exit 1
+
   RESPONSE=$(curl -s -X POST "$API_URL/makers/create" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $ZKP2P_API_KEY" \
     -H "X-API-Key: $ZKP2P_API_KEY" \
-    -d "{\"processorName\":\"$API_PROCESSOR\",\"depositData\":{\"${PLATFORM}Identifier\":\"$IDENTIFIER\",\"telegramUsername\":\"\"}}")
+    -d "{\"processorName\":\"$API_PROCESSOR\",\"depositData\":{\"$DATA_KEY\":\"$IDENTIFIER\",\"telegramUsername\":\"\"}}")
 
   PAYEE_DETAILS=$(echo "$RESPONSE" | jq -r '.responseObject.hashedOnchainId // empty')
   if [[ -z "$PAYEE_DETAILS" ]]; then
     echo "Warning: Could not get hashedOnchainId. Response: $RESPONSE"
     echo "Proceeding with zero payee details (deposit will work but buyers can't verify payment)."
-    PAYEE_DETAILS="$ZERO"
+    PAYEE_DETAILS="$ZERO_BYTES32"
   else
     echo "Payee registered: $PAYEE_DETAILS"
   fi
@@ -161,7 +180,7 @@ echo "Step 3: Creating deposit..."
 
 DEPOSIT_TX=$(cast send "$ESCROW" \
   "createDeposit((address,uint256,(uint256,uint256),bytes32[],(address,bytes32,bytes)[],((bytes32,uint256)[])[],address,address,bool))" \
-  "($USDC, $AMOUNT_UNITS, ($MIN_UNITS,$MAX_UNITS), [$METHOD_HASH], [($GATING,$PAYEE_DETAILS,0x)], [[($CURRENCY_HASH,$RATE_18)]], $DELEGATE, $ZERO, false)" \
+  "($USDC, $AMOUNT_UNITS, ($MIN_UNITS,$MAX_UNITS), [$METHOD_HASH], [($GATING,$PAYEE_DETAILS,0x)], [[($CURRENCY_HASH,$RATE_18)]], $DELEGATE, $ZERO_ADDR, false)" \
   --rpc-url "$RPC" \
   --private-key "$PRIVATE_KEY" \
   --json | jq -r '.transactionHash')

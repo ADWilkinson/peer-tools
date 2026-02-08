@@ -59,7 +59,7 @@ A deposit is how you sell USDC for fiat. You lock USDC into the ZKP2P V3 escrow 
 
 If live data was fetched, present the platforms and currencies from the API response in a table format showing: platform name, supported currencies, and identifier type.
 
-If no API key, tell the user which platforms/currencies are available can be checked live at https://usdctofiat.xyz or by setting `PEERLYTICS_API_KEY`.
+If no API key, tell the user that available platforms/currencies can be checked live at https://usdctofiat.xyz or by setting `PEERLYTICS_API_KEY`.
 
 #### Current Market State
 
@@ -76,6 +76,7 @@ If market data was fetched, include: number of active deposits, total available 
 ### 4. Follow-ups
 
 Suggest:
+- `/usdctofiat:create-deposit` -- Create a deposit via direct contract calls (for agents and devs)
 - `/usdctofiat:rate-strategy` -- Get optimal rate recommendations for your currency
 - `/usdctofiat:earnings-calc` -- Project monthly earnings based on deposit size and rate
 - `/usdctofiat:onramp-guide` -- Learn about the buy side (how buyers use your deposit)

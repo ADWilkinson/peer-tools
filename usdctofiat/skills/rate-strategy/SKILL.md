@@ -83,6 +83,7 @@ When evaluating a rate against live data:
 ### 4. Follow-ups
 
 Suggest:
+- `/usdctofiat:create-deposit` -- Create a deposit via direct contract calls (for agents and devs)
 - `/usdctofiat:earnings-calc` -- Calculate projected earnings at your chosen rate
 - `/usdctofiat:deposit-guide` -- Full guide to creating a deposit
 
