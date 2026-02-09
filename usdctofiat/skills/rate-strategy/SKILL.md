@@ -80,6 +80,89 @@ When evaluating a rate against live data:
 3. **Start at P35, then tune** based on fill experience over 24-48 hours
 4. **Multi-payment advantage** -- multiple payment methods at the same rate increases effective fill rate
 
+#### Automated Rate Optimization
+
+For users who want to move beyond manual tuning, rate management can be structured as a closed-loop optimization cycle:
+
+1. **Collect** -- pull fill history, PnL, and competitor rates
+2. **Compute** -- apply decision rules to determine the next rate
+3. **Execute** -- update the on-chain deposit rate
+4. **Monitor** -- observe fill performance and feed back into step 1
+
+**Decision tree (per currency-platform pair):**
+
+| Condition | Action |
+|-----------|--------|
+| PnL is negative | WIDEN spread by 20 bps |
+| Zero fills AND >7 days active | DISABLE pair (set rate to 0) |
+| Zero fills AND <7 days active | TIGHTEN spread by 15 bps |
+| Overpriced vs median (>5% above market) | TIGHTEN by 10 bps |
+| Underpriced vs market best rate | WIDEN by 5 bps |
+| Otherwise | HOLD current rate |
+
+Rules are evaluated top-to-bottom; first match wins.
+
+**Safety guardrails:**
+
+- **Max change per iteration**: 50 bps. Larger adjustments are clamped and require a second pass.
+- **Min spread floor**: 10 bps (`1.001x`). Never set a rate below this unless intentionally offering 1:1.
+- **Max spread cap**: 10% (`1.10x`). Rates above this are unlikely to ever fill.
+- **Disable threshold**: 7+ consecutive days with zero fills triggers automatic disable (rate = 0).
+- **Warning threshold**: Any single adjustment >30 bps should be flagged for review before applying.
+
+#### Indexer-Based Rate Analysis
+
+You can query competitor rates and vault performance directly from the ZKP2P indexer GraphQL endpoint:
+
+**Endpoint:** `https://indexer.hyperindex.xyz/00be13d/v1/graphql`
+
+**Active deposit rates by payment method and currency:**
+
+```graphql
+query ActiveRates($methodCurrencyId: String!) {
+  MethodCurrency(where: { id: { _eq: $methodCurrencyId } }) {
+    id
+    bestRate
+    depositCount
+    deposits(where: { status: { _eq: "active" } }) {
+      conversionRate
+      availableLiquidity
+      depositor
+    }
+  }
+}
+```
+
+**Vault manager performance:**
+
+```graphql
+query VaultPerformance($managerId: String!) {
+  ManagerAggregateStats(where: { manager: { _eq: $managerId } }) {
+    manager
+    totalDeposits
+    totalIntentsCompleted
+    totalVolumeUSDC
+  }
+}
+```
+
+See `../../shared/references/constants.md` for rate encoding reference, payment method hashes, and currency codes.
+
+#### Rate Encoding Quick Reference
+
+Rates use 18-decimal fixed-point encoding. The encoded value represents how much fiat the buyer pays per 1 USDC.
+
+| Scenario | Encoded Value | BPS Markup |
+|----------|---------------|------------|
+| 1:1 | `1000000000000000000` | 0 bps |
+| 10 bps | `1001000000000000000` | 10 bps |
+| 50 bps | `1005000000000000000` | 50 bps |
+| 2% | `1020000000000000000` | 200 bps |
+| 5% | `1050000000000000000` | 500 bps |
+| Disabled | `0` | N/A |
+
+Formula: `encodedRate = (1 + bps / 10000) * 1e18`
+
 ### 4. Follow-ups
 
 Suggest:

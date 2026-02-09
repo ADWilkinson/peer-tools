@@ -242,6 +242,13 @@ cast send 0x2f121CDDCA6d652f35e8B3E560f9760898888888 \
   --rpc-url https://mainnet.base.org --private-key $PRIVATE_KEY
 ```
 
+**Remove funds (partial withdrawal):**
+```bash
+cast send 0x2f121CDDCA6d652f35e8B3E560f9760898888888 \
+  "removeFunds(uint256,uint256)" $DEPOSIT_ID $AMOUNT \
+  --rpc-url https://mainnet.base.org --private-key $PRIVATE_KEY
+```
+
 **Update rate:**
 ```bash
 cast send 0x2f121CDDCA6d652f35e8B3E560f9760898888888 \
@@ -250,7 +257,42 @@ cast send 0x2f121CDDCA6d652f35e8B3E560f9760898888888 \
   --rpc-url https://mainnet.base.org --private-key $PRIVATE_KEY
 ```
 
-**Withdraw:**
+**Pause/resume accepting intents:**
+```bash
+cast send 0x2f121CDDCA6d652f35e8B3E560f9760898888888 \
+  "setAcceptingIntents(uint256,bool)" $DEPOSIT_ID false \
+  --rpc-url https://mainnet.base.org --private-key $PRIVATE_KEY
+```
+
+**Update min/max intent range:**
+```bash
+cast send 0x2f121CDDCA6d652f35e8B3E560f9760898888888 \
+  "setIntentRange(uint256,uint256,uint256)" $DEPOSIT_ID $MIN_AMOUNT $MAX_AMOUNT \
+  --rpc-url https://mainnet.base.org --private-key $PRIVATE_KEY
+```
+
+**Set delegate:**
+```bash
+cast send 0x2f121CDDCA6d652f35e8B3E560f9760898888888 \
+  "setDelegate(uint256,address)" $DEPOSIT_ID $DELEGATE_ADDRESS \
+  --rpc-url https://mainnet.base.org --private-key $PRIVATE_KEY
+```
+
+**Remove delegate:**
+```bash
+cast send 0x2f121CDDCA6d652f35e8B3E560f9760898888888 \
+  "removeDelegate(uint256)" $DEPOSIT_ID \
+  --rpc-url https://mainnet.base.org --private-key $PRIVATE_KEY
+```
+
+**Prune expired intents (free locked funds):**
+```bash
+cast send 0x2f121CDDCA6d652f35e8B3E560f9760898888888 \
+  "pruneExpiredIntents(uint256)" $DEPOSIT_ID \
+  --rpc-url https://mainnet.base.org --private-key $PRIVATE_KEY
+```
+
+**Withdraw entire deposit:**
 ```bash
 cast send 0x2f121CDDCA6d652f35e8B3E560f9760898888888 \
   "withdrawDeposit(uint256)" $DEPOSIT_ID \
@@ -258,6 +300,165 @@ cast send 0x2f121CDDCA6d652f35e8B3E560f9760898888888 \
 ```
 
 Full ABI for all functions in `references/CONTRACTS.md`.
+
+## Intent Lifecycle
+
+| State | Meaning |
+|-------|---------|
+| Active | Buyer signaled intent, funds locked from your deposit |
+| Fulfilled | Proof submitted and verified, USDC released to buyer |
+| Cancelled | Buyer cancelled before proof, funds unlocked back to deposit |
+| Expired | Past expiration window, can be pruned to free locked funds |
+
+Intents lock a portion of your deposit's available balance. Expired intents remain locked until explicitly pruned via `pruneExpiredIntents`. Monitor your deposit's `lockedBalance` vs `availableBalance` to detect stuck funds.
+
+## SDK Alternative
+
+For TypeScript/JavaScript environments, you can use the `@zkp2p/offramp-sdk` instead of `cast`. The SDK wraps the same contract calls with a higher-level API.
+
+### Install
+
+```bash
+npm install @zkp2p/offramp-sdk viem
+```
+
+### Client Setup
+
+```typescript
+import { OfframpClient } from '@zkp2p/offramp-sdk';
+import { createWalletClient, http } from 'viem';
+import { base } from 'viem/chains';
+import { privateKeyToAccount } from 'viem/accounts';
+
+const account = privateKeyToAccount(process.env.PRIVATE_KEY as `0x${string}`);
+
+const walletClient = createWalletClient({
+  account,
+  chain: base,
+  transport: http('https://mainnet.base.org'),
+});
+
+const client = new OfframpClient({
+  walletClient,
+  chainId: 8453,
+  runtimeEnv: 'production',
+});
+```
+
+### Approve USDC
+
+```typescript
+await client.ensureAllowance({
+  amount: 1000_000000n, // 1000 USDC (6 decimals)
+});
+```
+
+### Create Deposit
+
+```typescript
+const txHash = await client.createDeposit({
+  processorNames: ['revolut'],
+  depositData: {
+    revolutUsername: 'myrevtag',
+    telegramUsername: '',
+  },
+  conversionRates: [
+    {
+      currency: 'GBP',
+      rate: 0.74,
+    },
+  ],
+  amount: 1000_000000n,
+  intentAmountRange: {
+    min: 5_000000n,
+    max: 1000_000000n,
+  },
+});
+```
+
+### Manage Deposit
+
+```typescript
+// Add funds
+await client.addFunds({ depositId, amount: 500_000000n });
+
+// Remove funds (partial withdrawal)
+await client.removeFunds({ depositId, amount: 200_000000n });
+
+// Withdraw entire deposit
+await client.withdrawDeposit({ depositId });
+
+// Update rate for a payment method + currency pair
+await client.setCurrencyMinRate({
+  depositId,
+  paymentMethodHash: client.resolvePaymentMethodHash('revolut'),
+  fiatCurrencyHash: client.resolveFiatCurrencyBytes32('GBP'),
+  newMinConversionRate: 750000000000000000n, // 0.75 GBP/USDC
+});
+
+// Pause accepting new intents
+await client.setAcceptingIntents({ depositId, accepting: false });
+
+// Resume accepting intents
+await client.setAcceptingIntents({ depositId, accepting: true });
+
+// Update min/max intent range
+await client.setIntentRange({
+  depositId,
+  min: 10_000000n,
+  max: 500_000000n,
+});
+
+// Prune expired intents to free locked funds
+await client.pruneExpiredIntents({ depositId });
+```
+
+### Delegation
+
+```typescript
+// Set a delegate (e.g. the delegate bot for automated rate management)
+await client.setDelegate({
+  depositId,
+  delegate: '0x25caEcB47ABB1363BA932F5Ea05c61488604562b',
+});
+
+// Remove delegate (back to self-managed)
+await client.removeDelegate({ depositId });
+```
+
+### Read Deposit State
+
+```typescript
+// Single deposit
+const deposit = await client.getDeposit(depositId);
+console.log(deposit.availableBalance, deposit.lockedBalance, deposit.acceptingIntents);
+
+// All deposits for the connected wallet
+const deposits = await client.getDeposits();
+```
+
+### Intent Monitoring
+
+```typescript
+// Poll for active intents on your deposit
+const pollIntents = async (depositId: bigint) => {
+  const seen = new Set<string>();
+
+  setInterval(async () => {
+    const intents = await client.getIntents({ depositId });
+
+    for (const intent of intents) {
+      if (!seen.has(intent.intentId)) {
+        seen.add(intent.intentId);
+        console.log(`New intent: ${intent.intentId}, amount: ${intent.amount}`);
+        // Handle new intent -- e.g. notify, check payment, etc.
+      }
+    }
+  }, 30_000); // Poll every 30 seconds
+};
+```
+
+> **Note:** The SDK wraps the same on-chain contract calls. The cast-based approach above is the primary method for this skill. Use the SDK when building TypeScript applications or when you prefer a higher-level API.
 
 ## Error Handling
 
@@ -268,6 +469,91 @@ Full ABI for all functions in `references/CONTRACTS.md`.
 | `InvalidPaymentMethod` | Unknown payment method hash | Verify hash from platforms table |
 | `InvalidAmount` | Amount below minimum (10 USDC) | Increase deposit amount |
 | `InvalidIntentRange` | min > max or out of bounds | Fix min/max intent values |
+
+## Security Rules
+
+1. **Never expose private keys in logs or output.** Use environment variables (`$PRIVATE_KEY`) and never echo them.
+2. **Always verify contract addresses** before sending transactions. Cross-check against the Quick Reference table.
+3. **Start with small deposits** (10-100 USDC) to validate your setup before committing larger amounts.
+4. **Check allowance before approving.** Only approve what you need. Avoid unlimited approvals in production.
+5. **Verify payee details carefully.** An incorrect `hashedOnchainId` means buyers cannot verify your payment account, and intents may fail.
+6. **Monitor locked vs available balance.** Locked funds are committed to active intents. Only available balance can be withdrawn.
+7. **Prune expired intents regularly.** Expired intents keep funds locked until explicitly pruned. Run `pruneExpiredIntents` periodically.
+8. **Use a delegate for automated management.** If you cannot monitor 24/7, set the delegate bot (`0x25caEcB47ABB1363BA932F5Ea05c61488604562b`) to handle rate adjustments automatically.
+
+## Common Patterns
+
+### Conservative LP Setup
+
+Single platform, moderate markup, small deposit to test the flow:
+
+```bash
+# 500 USDC on Revolut, GBP at 0.76 (slightly above market for margin)
+# Min order 5 USDC, max 500 USDC, delegate bot for rate management
+CALLDATA=$(cast calldata \
+  "createDeposit((address,uint256,(uint256,uint256),bytes32[],(address,bytes32,bytes)[],((bytes32,uint256)[])[],address,address,bool))" \
+  "(0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913, 500000000, (5000000,500000000), [0x617f88ab82b5c1b014c539f7e75121427f0bb50a4c58b187a238531e7d58605d], [(0x396D31055Db28C0C6f36e8b36f18FE7227248a97,REVOLUT_PAYEE_HASH,0x)], [[(0x90832e2dc3221e4d56977c1aa8f6a6706b9ad6542fbbdaac13097d0fa5e42e67,760000000000000000)]], 0x25caEcB47ABB1363BA932F5Ea05c61488604562b, 0x0000000000000000000000000000000000000000, false)")
+ATTRIBUTION="75736463746f666961742c62635f6e626e36716b6e69160080218021802180218021802180218021"
+cast send 0x2f121CDDCA6d652f35e8B3E560f9760898888888 \
+  --data "${CALLDATA}${ATTRIBUTION}" \
+  --rpc-url https://mainnet.base.org --private-key $PRIVATE_KEY
+```
+
+### Multi-Platform LP
+
+High liquidity deposit across Wise, Revolut, and Venmo for maximum fill coverage:
+
+```bash
+# 5000 USDC across 3 platforms
+# Wise: GBP + EUR, Revolut: GBP + EUR, Venmo: USD
+CALLDATA=$(cast calldata \
+  "createDeposit((address,uint256,(uint256,uint256),bytes32[],(address,bytes32,bytes)[],((bytes32,uint256)[])[],address,address,bool))" \
+  "(0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913, 5000000000, (5000000,2500000000), [0x554a007c2217df766b977723b276671aee5ebb4adaea0edb6433c88b3e61dac5,0x617f88ab82b5c1b014c539f7e75121427f0bb50a4c58b187a238531e7d58605d,0x9026d7433bf0e28bbf5e1dc47b7b0a19dd2a0026bf93a33f8a41b6db4f577268], [(0x396D31055Db28C0C6f36e8b36f18FE7227248a97,WISE_PAYEE_HASH,0x),(0x396D31055Db28C0C6f36e8b36f18FE7227248a97,REVOLUT_PAYEE_HASH,0x),(0x396D31055Db28C0C6f36e8b36f18FE7227248a97,VENMO_PAYEE_HASH,0x)], [[(0x90832e2dc3221e4d56977c1aa8f6a6706b9ad6542fbbdaac13097d0fa5e42e67,740000000000000000),(0xfff16d60be267153303bbfa66e593fb8d06e24ea5ef24b6acca5224c2ca6b907,920000000000000000)],[(0x90832e2dc3221e4d56977c1aa8f6a6706b9ad6542fbbdaac13097d0fa5e42e67,740000000000000000),(0xfff16d60be267153303bbfa66e593fb8d06e24ea5ef24b6acca5224c2ca6b907,920000000000000000)],[(0xc4ae21aac0c6549d71dd96035b7e0bdb6c79ebdba8891b666115bc976d16a29e,1010000000000000000)]], 0x25caEcB47ABB1363BA932F5Ea05c61488604562b, 0x0000000000000000000000000000000000000000, false)")
+ATTRIBUTION="75736463746f666961742c62635f6e626e36716b6e69160080218021802180218021802180218021"
+cast send 0x2f121CDDCA6d652f35e8B3E560f9760898888888 \
+  --data "${CALLDATA}${ATTRIBUTION}" \
+  --rpc-url https://mainnet.base.org --private-key $PRIVATE_KEY
+```
+
+### Dynamic Rate Adjustment
+
+Adjust your rate based on deposit utilization. If your deposit is heavily utilized (high locked/available ratio), you can increase your rate to capture more margin:
+
+```bash
+# Check current utilization
+DEPOSIT=$(cast call 0x2f121CDDCA6d652f35e8B3E560f9760898888888 \
+  "getDeposit(uint256)((address,address,uint256,uint256,(uint256,uint256),bool,uint256,address,address,bool))" \
+  $DEPOSIT_ID --rpc-url https://mainnet.base.org)
+
+# If >80% utilized (high demand), raise rate by 1-2%
+# If <20% utilized (low demand), lower rate by 1-2%
+# Use setCurrencyMinRate to update
+cast send 0x2f121CDDCA6d652f35e8B3E560f9760898888888 \
+  "setCurrencyMinRate(uint256,bytes32,bytes32,uint256)" \
+  $DEPOSIT_ID $PAYMENT_METHOD_HASH $CURRENCY_HASH $ADJUSTED_RATE_18 \
+  --rpc-url https://mainnet.base.org --private-key $PRIVATE_KEY
+```
+
+### Rebalancing Check
+
+Monitor your deposit and prune expired intents to keep funds available:
+
+```bash
+# 1. Check deposit state
+cast call 0x2f121CDDCA6d652f35e8B3E560f9760898888888 \
+  "getDeposit(uint256)((address,address,uint256,uint256,(uint256,uint256),bool,uint256,address,address,bool))" \
+  $DEPOSIT_ID --rpc-url https://mainnet.base.org
+
+# 2. If lockedBalance > 0 and you suspect expired intents, prune them
+cast send 0x2f121CDDCA6d652f35e8B3E560f9760898888888 \
+  "pruneExpiredIntents(uint256)" $DEPOSIT_ID \
+  --rpc-url https://mainnet.base.org --private-key $PRIVATE_KEY
+
+# 3. Re-check -- available balance should increase after pruning
+cast call 0x2f121CDDCA6d652f35e8B3E560f9760898888888 \
+  "getDeposit(uint256)((address,address,uint256,uint256,(uint256,uint256),bool,uint256,address,address,bool))" \
+  $DEPOSIT_ID --rpc-url https://mainnet.base.org
+```
 
 ## Companion Skills
 
